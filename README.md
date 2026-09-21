@@ -1,100 +1,161 @@
 # Automated M&A and Product Launch Detection System
 
-Pulls 8-K filings from SEC EDGAR, throws away the ones that structurally can't
-contain a corporate event, parses the rest, and writes a structured dataset of
-acquisitions, mergers, divestitures and product launches with their disclosed
-deal values.
+A Corporate Events Intelligence Pipeline over SEC 8-K filings.
+
+Detects M&A activity and product launches in SEC 8-K filings. Discovers filings
+from EDGAR's quarterly indexes, drops the ones that structurally can't contain
+an event before downloading them, cleans the rest down to narrative text, and
+writes a structured dataset with deal values, counterparties and a link back to
+every source filing.
 
 ```
-company_tickers.json ─▶ submissions API ─▶ item-number filter ─▶ fetch document
-                                                 (80% dropped)          │
-                                                                        ▼
-                                    CSV ◀── pandas ◀── classify + extract value
+quarterly index â”€â–¶ item-number filter â”€â–¶ fetch â”€â–¶ clean â”€â–¶ classify â”€â–¶ CSV / parquet
+                   (metadata only,               (~89% of              + run report
+                    nothing downloaded)           characters)
 ```
 
-## Where the noise reduction comes from
+## The idea
 
-Most 8-Ks are Item 2.02 earnings releases, Item 5.02 officer changes and Item
-5.07 shareholder votes. None of them can contain an M&A announcement. The SEC
-already tags every filing with its item numbers in the submissions API, so the
-filter runs on metadata **before** any document is downloaded. On a realistic
-item mix that drops about 80% of filings, and the 80% that never gets fetched is
-also 80% of the runtime, since download is the slow step.
+Roughly 60,000 8-Ks are filed a year and almost none of them are interesting.
+Most are earnings releases (Item 2.02), officer changes (5.02) and shareholder
+votes (5.07) â€” categories that *cannot* contain an acquisition announcement.
+The SEC tags every filing with those item numbers in metadata, so you can throw
+out most of the corpus before spending a single byte of bandwidth on it.
 
-Surviving filings (1.01, 2.01, 7.01, 8.01) get their text stripped of HTML,
-scanned for M&A and launch cues, and scored.
+What survives is still mostly not prose: SGML headers, cover-page checkboxes,
+forward-looking-statement disclaimers, and base64 exhibits that are frequently
+larger than the filing. Stripping those leaves a few hundred characters of
+actual announcement text, which is small enough to classify with transparent
+rules instead of a model.
+
+## Quick start
+
+```bash
+pip install -r requirements-dev.txt
+cp .env.example .env          # set EDGAR_USER_AGENT â€” the SEC 403s without it
+
+pytest                        # 54 tests, no network required
+make noise-fixtures           # noise reduction on the committed fixtures
+
+python scripts/run_pipeline.py --tickers AAPL MSFT NVDA --since 2024-01-01
+```
+
+Bulk run over a full quarter, resumable:
+
+```bash
+python scripts/run_pipeline.py --quarter 2025Q2 --checkpoint out/ckpt.jsonl
+```
+
+## Reproducing the numbers
+
+Every figure this project reports has a command that produces it. Nothing is
+hardcoded in the README.
+
+| What | Command | Status |
+|---|---|---|
+| Noise reduction, character level | `python scripts/noise_fixtures.py` | measured â€” 89.0% mean on committed fixtures |
+| Noise reduction, filing level | `pytest -s -k representative_item_mix` | measured â€” 79.0% on the documented item mix |
+| Noise reduction on live filings | `make noise` | needs network |
+| Company universe size | `make universe` | needs network (~80 requests, about a minute) |
+| Throughput and projected runtime | `make throughput` | needs network |
+| Field-level accuracy | `make label` then `make evaluate` | needs a hand-labelled sample |
+
+The first two run offline against `data/fixtures/`, which is why those fixtures
+are realistic submissions with headers and exhibits rather than toy snippets.
+The rest need EDGAR access; `measure_noise.py` and `measure_throughput.py`
+print the measured values so they can be pasted here.
+
+Accuracy deliberately cannot be produced by a script alone. Scoring the
+pipeline against its own output would measure agreement with itself, so
+`label_sample.py` draws a stratified sample and the judgement columns get
+filled in by hand. [`docs/evaluation.md`](docs/evaluation.md) defines what each
+metric means.
+
+## Output
+
+```
+cik,company,filing_date,accession,items,event_type,confidence,deal_value_usd,counterparty,...
+0000912345,MERIDIAN SYSTEMS INC,2025-10-14,0001628280-25-031447,"1.01,9.01",merger,0.93,2400000000.0,Calderon Technologies Inc,...
+```
+
+Full field descriptions in [`docs/data-dictionary.md`](docs/data-dictionary.md).
+Two fields worth calling out:
+
+- **`evidence`** records which cue phrases fired and how often, so any
+  classification can be argued with rather than taken on faith.
+- **`deal_value_usd`** is null for product launches by design. An early version
+  reported $4,200 for a launch because that was the product's unit price;
+  `tests/test_transform.py` pins the fix.
+
+## How it's put together
+
+```
+src/corpevents/
+  config.py      settings, all from the environment
+  client.py      rate-limited HTTP, thread-shared token bucket, disk cache
+  universe.py    company universe from the quarterly full indexes
+  discovery.py   8-K discovery â€” bulk via index, targeted via submissions API
+  filters.py     stage 1 noise reduction: item-number filter
+  cleaning.py    stage 2: strip header, markup, exhibits, boilerplate
+  classify.py    weighted cue scoring + counterparty extraction
+  money.py       dollar amount parsing with context exclusion
+  transform.py   filing -> dataset row
+  schema.py      the output contract, plus validation
+  load.py        CSV / parquet writing and run summary
+  pipeline.py    threaded orchestration with JSONL checkpointing
+```
+
+Design decisions and the reasoning behind them are in
+[`docs/architecture.md`](docs/architecture.md). The short version:
+
+- The item filter runs **before** the fetch. That ordering is the difference
+  between a run taking hours and taking most of a day.
+- Threads, not asyncio â€” the work is network-bound and stack traces stay
+  readable. One global rate limiter means adding workers hides latency without
+  raising the outbound request rate.
+- Cue-based classification rather than a trained model, because no labelled
+  corpus of 8-K event types exists and building one would have been the entire
+  project. The trade-off is recall, recorded below.
 
 ## Rate limiting
 
-The SEC allows 10 requests/second and rejects requests without a `User-Agent`
-containing contact details. Both are handled in `edgar.py`; `EDGAR_USER_AGENT`
-is required rather than optional because the alternative is a 403. Responses are
-cached to `.cache/`, so re-running a job re-downloads nothing.
+The SEC allows 10 requests/second and blocks the IP for about ten minutes if
+you exceed it. `client.py` holds a lock-guarded token bucket shared by every
+worker thread, so the total outbound rate stays under the ceiling no matter how
+many workers run. A 429 backs off exponentially rather than retrying hard,
+since retrying aggressively just extends the block.
 
-That ceiling is what sets the runtime: ~25,000 filings at 10/s with the item
-filter in front works out to a few hours, not minutes.
+Responses are cached to `.cache/` keyed by URL, and runs checkpoint to JSONL
+after every batch, so a crashed run resumes instead of restarting.
 
-## Running it
+## Known issues
 
-```bash
-pip install -r requirements.txt
-cp .env.example .env          # set EDGAR_USER_AGENT — required
+- **Recall isn't measured.** Doing it honestly needs a sample of filings known
+  to contain events, which means reading a lot of filings that don't. This is
+  the biggest gap in the evaluation.
+- `deal_value_usd` takes the largest qualifying amount, which is correct for
+  headline consideration and wrong when one filing covers several transactions.
+- Counterparty extraction is a regex over capitalised spans. Names not shaped
+  like "acquisition of X Inc." are missed.
+- `filing_date` is the EDGAR acceptance date, not the event date â€” 8-Ks are due
+  within four business days, so announcements typically precede the filing.
+  For event studies the press release date inside the document is the better
+  anchor, and it isn't extracted yet.
+- Only 8-Ks. Deal specifics often land later in S-4 and DEFM14A filings.
+- The item mix used for the filing-level measurement is an assumption
+  documented in [`docs/noise-reduction.md`](docs/noise-reduction.md), not a
+  figure sampled from EDGAR. `make noise` replaces it with a measured one.
 
-python main.py --tickers AAPL MSFT NVDA --since 2024-01-01
-python main.py --limit 500 --since 2025-01-01 --out out/events.csv
-python main.py --summary out/events.csv
-```
+## Data source
 
-Output:
+SEC EDGAR, public domain. Usage follows the SEC's
+[access policy](https://www.sec.gov/os/webmaster-faq#developers): descriptive
+User-Agent, rate limited, responses cached so the same document is never
+fetched twice.
 
-```
-2 events | disclosed value $2.4B
 
-event_type
-acquisition       1
-product_launch    1
 
-Largest disclosed events:
-  $   2.40B  2025-10-14  Meridian Systems, Inc.    acquisition
-```
+## Author
 
-## Output schema
+Pal Ajay Ramsagar - github.com/ajaypal5117
 
-| Column | Notes |
-|---|---|
-| `cik`, `company`, `filing_date`, `accession`, `url` | provenance, back to the source filing |
-| `event_type` | acquisition, merger, divestiture, product_launch |
-| `confidence` | from cue density |
-| `deal_value_usd` | largest disclosed figure; **null for launches**, where the biggest number is usually a unit price |
-| `counterparty` | acquired/merging entity where named |
-| `items` | the 8-K items that let it through the filter |
-
-## Tests
-
-```bash
-pytest -s
-```
-
-14 tests, no network — they run against the fixtures in `samples/`.
-`test_noise_reduction_rate` measures the filter against a labelled item
-distribution and prints the score rather than asserting a number from nowhere.
-
-## Layout
-
-```
-├── main.py           orchestration + CLI + pandas output
-├── edgar.py          EDGAR client: rate limit, User-Agent, disk cache
-├── extract.py        item filter, HTML cleaning, classification, money parsing
-├── test_extract.py
-└── samples/          three 8-K fixtures: acquisition, launch, earnings
-```
-
-## Limits
-
-- Classification is cue-based, not a model. It's tuned for precision on clear
-  announcements and will miss obliquely worded ones.
-- `deal_value_usd` takes the largest figure in the document, which is right for
-  headline consideration but wrong when a filing discusses several transactions.
-- Counterparty extraction is a regex over capitalised spans and misses names
-  that don't follow the usual "acquisition of X Inc." shape.
-- Only 8-Ks. Merger specifics often land in later S-4s and DEFM14As.
