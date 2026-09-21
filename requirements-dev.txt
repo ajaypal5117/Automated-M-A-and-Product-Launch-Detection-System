@@ -1,0 +1,7 @@
+-r requirements.txt
+
+pytest>=8.0
+ruff>=0.7
+
+# Optional: enables parquet output alongside CSV. The pipeline works without it.
+# pyarrow>=17.0
