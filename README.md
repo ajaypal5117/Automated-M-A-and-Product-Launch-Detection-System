@@ -9,16 +9,16 @@ writes a structured dataset with deal values, counterparties and a link back to
 every source filing.
 
 ```
-quarterly index â”€â–¶ item-number filter â”€â–¶ fetch â”€â–¶ clean â”€â–¶ classify â”€â–¶ CSV / parquet
-                   (metadata only,               (~89% of              + run report
-                    nothing downloaded)           characters)
+quarterly index --> item-number filter --> fetch --> clean --> classify --> CSV / parquet
+                    (metadata only,                 (~89% of                + run report
+                     nothing downloaded)             characters)
 ```
 
 ## The idea
 
 Roughly 60,000 8-Ks are filed a year and almost none of them are interesting.
 Most are earnings releases (Item 2.02), officer changes (5.02) and shareholder
-votes (5.07) â€” categories that *cannot* contain an acquisition announcement.
+votes (5.07) - categories that *cannot* contain an acquisition announcement.
 The SEC tags every filing with those item numbers in metadata, so you can throw
 out most of the corpus before spending a single byte of bandwidth on it.
 
@@ -32,10 +32,10 @@ rules instead of a model.
 
 ```bash
 pip install -r requirements-dev.txt
-cp .env.example .env          # set EDGAR_USER_AGENT â€” the SEC 403s without it
+cp .env.example .env          # set EDGAR_USER_AGENT - the SEC 403s without it
 
-pytest                        # 54 tests, no network required
-make noise-fixtures           # noise reduction on the committed fixtures
+pytest                              # 54 tests, no network required
+python scripts/noise_fixtures.py    # noise reduction on the committed fixtures
 
 python scripts/run_pipeline.py --tickers AAPL MSFT NVDA --since 2024-01-01
 ```
@@ -53,12 +53,12 @@ hardcoded in the README.
 
 | What | Command | Status |
 |---|---|---|
-| Noise reduction, character level | `python scripts/noise_fixtures.py` | measured â€” 89.0% mean on committed fixtures |
-| Noise reduction, filing level | `pytest -s -k representative_item_mix` | measured â€” 79.0% on the documented item mix |
-| Noise reduction on live filings | `make noise` | needs network |
-| Company universe size | `make universe` | needs network (~80 requests, about a minute) |
-| Throughput and projected runtime | `make throughput` | needs network |
-| Field-level accuracy | `make label` then `make evaluate` | needs a hand-labelled sample |
+| Noise reduction, character level | `python scripts/noise_fixtures.py` | measured - 89.0% mean on committed fixtures |
+| Noise reduction, filing level | `pytest -s -k representative_item_mix` | measured - 79.0% on the documented item mix |
+| Noise reduction on live filings | `python scripts/measure_noise.py --quarter 2025Q2` | needs network |
+| Company universe size | `python scripts/build_universe.py --from 2005 --to 2025` | needs network (~80 requests, about a minute) |
+| Throughput and projected runtime | `python scripts/measure_throughput.py --quarter 2025Q2` | needs network |
+| Field-level accuracy | `scripts/label_sample.py` then `scripts/evaluate.py` | needs a hand-labelled sample |
 
 The first two run offline against `data/fixtures/`, which is why those fixtures
 are realistic submissions with headers and exhibits rather than toy snippets.
@@ -94,7 +94,7 @@ src/corpevents/
   config.py      settings, all from the environment
   client.py      rate-limited HTTP, thread-shared token bucket, disk cache
   universe.py    company universe from the quarterly full indexes
-  discovery.py   8-K discovery â€” bulk via index, targeted via submissions API
+  discovery.py   8-K discovery - bulk via index, targeted via submissions API
   filters.py     stage 1 noise reduction: item-number filter
   cleaning.py    stage 2: strip header, markup, exhibits, boilerplate
   classify.py    weighted cue scoring + counterparty extraction
@@ -110,7 +110,7 @@ Design decisions and the reasoning behind them are in
 
 - The item filter runs **before** the fetch. That ordering is the difference
   between a run taking hours and taking most of a day.
-- Threads, not asyncio â€” the work is network-bound and stack traces stay
+- Threads, not asyncio - the work is network-bound and stack traces stay
   readable. One global rate limiter means adding workers hides latency without
   raising the outbound request rate.
 - Cue-based classification rather than a trained model, because no labelled
@@ -137,14 +137,15 @@ after every batch, so a crashed run resumes instead of restarting.
   headline consideration and wrong when one filing covers several transactions.
 - Counterparty extraction is a regex over capitalised spans. Names not shaped
   like "acquisition of X Inc." are missed.
-- `filing_date` is the EDGAR acceptance date, not the event date â€” 8-Ks are due
+- `filing_date` is the EDGAR acceptance date, not the event date - 8-Ks are due
   within four business days, so announcements typically precede the filing.
   For event studies the press release date inside the document is the better
   anchor, and it isn't extracted yet.
 - Only 8-Ks. Deal specifics often land later in S-4 and DEFM14A filings.
 - The item mix used for the filing-level measurement is an assumption
   documented in [`docs/noise-reduction.md`](docs/noise-reduction.md), not a
-  figure sampled from EDGAR. `make noise` replaces it with a measured one.
+  figure sampled from EDGAR. `scripts/measure_noise.py` replaces it with a
+  measured one.
 
 ## Data source
 
@@ -153,9 +154,6 @@ SEC EDGAR, public domain. Usage follows the SEC's
 User-Agent, rate limited, responses cached so the same document is never
 fetched twice.
 
-
-
 ## Author
 
 Pal Ajay Ramsagar - github.com/ajaypal5117
-

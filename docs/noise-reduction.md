@@ -4,7 +4,7 @@
 corporate event announcement. It gets removed in two stages that reduce
 different things, so they're measured separately.
 
-## Stage 1 â€” item-number filter (filing level)
+## Stage 1 ??? item-number filter (filing level)
 
 Every 8-K is tagged by the filer with the item numbers it reports under, and
 those tags are in the submissions metadata before any document is fetched.
@@ -41,7 +41,7 @@ python scripts/measure_noise.py --quarter 2025Q2 --sample 500
 That samples a real quarter and reports the observed rate, along with the
 breakdown of why filings were dropped.
 
-## Stage 2 â€” text cleaning (character level)
+## Stage 2 ??? text cleaning (character level)
 
 A filing that survives stage 1 is still mostly not prose. A raw submission
 carries an SGML header block, cover-page checkbox boilerplate, forward-looking
@@ -60,7 +60,7 @@ Measured on the fixtures in `data/fixtures/`:
 
 Mean 89.0%, median 88.3%. Reproduce with `python scripts/noise_fixtures.py`.
 
-Real filings reduce by more than these fixtures, not less â€” production 8-Ks
+Real filings reduce by more than these fixtures, not less ??? production 8-Ks
 carry far heavier exhibit payloads than anything reasonable to commit to a
 repository.
 
