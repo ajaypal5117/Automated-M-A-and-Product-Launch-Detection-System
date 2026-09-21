@@ -1,0 +1,28 @@
+<SEC-HEADER>0001628280-25-031447.hdr.sgml : 20251014
+ACCESSION NUMBER:		0001628280-25-031447
+CONFORMED SUBMISSION TYPE:	8-K
+PUBLIC DOCUMENT COUNT:		14
+CONFORMED PERIOD OF REPORT:	20251014
+ITEM INFORMATION:		Other Events
+FILED AS OF DATE:		20251014
+FILER:
+	COMPANY DATA:
+		COMPANY CONFORMED NAME:			MERIDIAN SYSTEMS INC
+		CENTRAL INDEX KEY:			0000912345
+		STANDARD INDUSTRIAL CLASSIFICATION:	INSTRUMENTS FOR MEAS AND TESTING [3829]
+		STATE OF INCORPORATION:			DE
+</SEC-HEADER>
+<DOCUMENT>
+<TYPE>8-K
+<SEQUENCE>1
+<FILENAME>doc.htm
+<TEXT>
+<html><head><style>.hdr{font-family:Arial}</style></head><body>
+<p>Item 8.01. Other Events.</p>
+<p>On February 10, 2025, the Company announced that its board of directors declared a quarterly cash
+dividend of $0.18 per share, payable on March 14, 2025 to stockholders of record as of February 28,
+2025.</p>
+<p style='font-size:8pt;'>Forward-Looking Statements. This Current Report contains forward-looking statements within the meaning of the Private Securities Litigation Reform Act of 1995, including statements regarding the expected timing and benefits of the transaction. These statements are subject to risks and uncertainties, including the possibility that closing conditions are not satisfied, that regulatory approvals are delayed or denied, that anticipated synergies are not realised, that integration proves more costly than expected, and other factors described in the Annual Report on Form 10-K. The Company undertakes no obligation to update any forward-looking statement.</p>
+</body></html>
+</TEXT>
+</DOCUMENT>
