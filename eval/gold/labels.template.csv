@@ -1,0 +1,3 @@
+accession,cik,company,filing_date,event_type,confidence,deal_value_usd,counterparty,url,event_type_correct,deal_value_correct,counterparty_correct,is_actually_an_event,notes
+0001628280-25-031447,0000912345,MERIDIAN SYSTEMS INC,2025-10-14,merger,0.93,2400000000.0,Calderon Technologies Inc,https://www.sec.gov/Archives/edgar/data/912345/000162828025031447/doc.htm,y,y,y,y,
+0001628280-25-019022,0000912345,NORTHGATE DEVICES CORP,2025-09-03,product_launch,0.85,,,https://www.sec.gov/Archives/edgar/data/912345/000162828025019022/doc.htm,y,na,na,y,
